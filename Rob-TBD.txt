@@ -1,0 +1,13 @@
+This is a copy of the admin UI flask code.
+
+1) Leave current functionality in place.
+
+2) Add what I need to implement the notification service.
+
+
+Later: Write a generic Flask API service which uses this as a sub module.
+- Use the Admin-Flask blueprints as a starting point.
+- Convert the Admin-UI to use this new generic Flask service.
+- Add in support for EDU UI.
+- Add in support for Sci UI.
+
