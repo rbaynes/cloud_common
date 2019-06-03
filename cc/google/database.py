@@ -11,6 +11,7 @@ from .datastore import *
 
 
 # ------------------------------------------------------------------------------
+#debugrob: this is in ../utils.py, import that and use it.
 def _bytes_to_string(bs):
     if isinstance(bs, bytes):
         bs = bs.decode('utf-8')
