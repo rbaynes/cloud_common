@@ -1,8 +1,7 @@
 # https://google-cloud-python.readthedocs.io/en/stable/pubsub/
 
+import logging
 from google.cloud import pubsub
-
-from .env_vars import *
 
 
 # Pub-sub client for Google Cloud, created when this module is loaded.
