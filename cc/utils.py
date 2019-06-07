@@ -17,7 +17,7 @@ def id_generator(size=6, chars=string.digits):
 
 #------------------------------------------------------------------------------
 # Is the key is in the dict? if so return True.  if not False.
-def validDictKey(d, key):
+def key_in_dict(d, key):
     if key in d:
         return True
     return False
@@ -28,3 +28,6 @@ def bytes_to_string(bs):
     if isinstance(bs, bytes):
         bs = bs.decode('utf-8')
     return bs
+
+
+

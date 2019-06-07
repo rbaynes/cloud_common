@@ -1,11 +1,12 @@
 # https://google-cloud-python.readthedocs.io/en/stable/datastore/usage.html
 
 import datetime as dt
-import uuid, json
+import uuid, json, logging
+from typing import Any, List, Dict
 
 from google.cloud import datastore
 
-from .env_vars import *
+from cloud_common.cc import utils 
 
 
 # Entity types 
@@ -35,8 +36,30 @@ DS_h20_ph_KEY = 'water_potential_hydrogen'
 DS_h20_temp_KEY = 'water_temperature_celcius'
 
 
-# Datastore client for Google Cloud
-datastore_client = datastore.Client(cloud_project_id)
+# How many entries are in the DeviceData queue of dicts.
+DS_env_vars_MAX_size = 100 # maximum number of values in each env. var list
+
+
+# Global
+__ds_client = None
+
+
+#------------------------------------------------------------------------------
+# Datastore client for google cloud
+def create_client(cloud_project_id) -> None:
+    global __ds_client 
+    if __ds_client is None:
+        __ds_client = datastore.Client(cloud_project_id)
+        logging.debug(f'cloud_common.cc.google.datastore client created.')
+
+
+#------------------------------------------------------------------------------
+def get_client() -> Any:
+    global __ds_client 
+    if __ds_client is None:
+        logging.error(f'cloud_common.cc.google.datastore you must call create_client() first.')
+        return None
+    return __ds_client
 
 
 #------------------------------------------------------------------------------
@@ -56,7 +79,10 @@ def get_count_of_entities_from_DS():
 
 #------------------------------------------------------------------------------
 def get_DeviceData_active_last_hour_count_from_DS():
-    query = datastore_client.query(kind=DS_device_data_KIND)
+    DS = get_client()
+    if DS is None:
+        return 0
+    query = DS.query(kind=DS_device_data_KIND)
     entities = list(query.fetch()) # get all entities
     count = 0
     utc = dt.datetime.utcnow() - dt.timedelta(hours=1)
@@ -68,7 +94,7 @@ def get_DeviceData_active_last_hour_count_from_DS():
         if status is not None:
             try:
                 ts = status.get('timestamp', b'')
-                ts = ts.decode('utf-8')
+                ts = utils.bytes_to_string(ts)
                 if ts > one_hour_ago: 
                     count = count + 1
             except:
@@ -81,7 +107,10 @@ def get_DeviceData_active_last_hour_count_from_DS():
 
 #------------------------------------------------------------------------------
 def get_entity_count_from_DS(kind):
-    query = datastore_client.query(kind=kind)
+    DS = get_client()
+    if DS is None:
+        return 0
+    query = DS.query(kind=kind)
     query.keys_only() # retuns less data, so faster
     entities = list(query.fetch()) # get all entities (keys only)
     return len(entities)
@@ -89,7 +118,10 @@ def get_entity_count_from_DS(kind):
 
 #------------------------------------------------------------------------------
 def get_one_from_DS(kind, key, value):
-    query = datastore_client.query(kind=kind)
+    DS = get_client()
+    if DS is None:
+        return None
+    query = DS.query(kind=kind)
     query.add_filter(key, '=', value)
     result = list(query.fetch(1)) # just get the first one (no order)
     if not result:
@@ -99,7 +131,10 @@ def get_one_from_DS(kind, key, value):
 
 #------------------------------------------------------------------------------
 def get_all_from_DS(kind, key, value):
-    query = datastore_client.query(kind=kind)
+    DS = get_client()
+    if DS is None:
+        return []
+    query = DS.query(kind=kind)
     query.add_filter(key, '=', value)
     result = list(query.fetch()) # fetch all data
     if not result:
@@ -109,22 +144,22 @@ def get_all_from_DS(kind, key, value):
 
 #------------------------------------------------------------------------------
 def get_by_key_from_DS(kind, key):
-    _key = datastore_client.key(kind, key)
-    _ent = datastore_client.get(_key)
+    DS = get_client()
+    if DS is None:
+        return None
+    _key = DS.key(kind, key)
+    _ent = DS.get(_key)
     if not _ent: 
         return None
     return _ent
 
 
 #------------------------------------------------------------------------------
-def _bytes_to_string(bs):
-    if isinstance(bs, bytes):
-        bs = bs.decode('utf-8')
-    return bs
-
-#------------------------------------------------------------------------------
 def get_device_name_from_DS(device_uuid):
-    query = datastore_client.query(kind=DS_devices_KIND)
+    DS = get_client()
+    if DS is None:
+        return "error"
+    query = DS.query(kind=DS_devices_KIND)
     query.add_filter('device_uuid', '=', device_uuid)
     results = list(query.fetch(1)) # just get first (no order)
     if len(results) > 0:
@@ -158,7 +193,10 @@ def get_device_data_from_DS(device_uuid):
 
 #------------------------------------------------------------------------------
 def get_count_of_users_devices_from_DS(user_uuid):
-    query = datastore_client.query(kind=DS_devices_KIND)
+    DS = get_client()
+    if DS is None:
+        return 0
+    query = DS.query(kind=DS_devices_KIND)
     query.keys_only() # retuns less data, so faster
     query.add_filter('user_uuid', '=', user_uuid)
     entities = list(query.fetch()) # get all entities (keys only)
@@ -168,8 +206,11 @@ def get_count_of_users_devices_from_DS(user_uuid):
 #------------------------------------------------------------------------------
 def get_list_of_users_from_DS():
     res = {}
+    DS = get_client()
+    if DS is None:
+        return res
     res['users'] = [] # list of users
-    query = datastore_client.query(kind=DS_users_KIND)
+    query = DS.query(kind=DS_users_KIND)
     users = list(query.fetch()) # get all users
     for u in users:
         user = {}
@@ -197,8 +238,11 @@ def get_list_of_users_from_DS():
 #------------------------------------------------------------------------------
 def get_list_of_devices_from_DS():
     res = {}
+    DS = get_client()
+    if DS is None:
+        return res
     res['devices'] = [] # list of devices
-    query = datastore_client.query(kind=DS_devices_KIND)
+    query = DS.query(kind=DS_devices_KIND)
     devices = list(query.fetch()) # get all devices 
     for d in devices:
         device = {}
@@ -232,7 +276,7 @@ def get_list_of_devices_from_DS():
                 last_boot = boot[0].get('value')
 
                 # convert binary into string and then a dict
-                boot_dict = json.loads(_bytes_to_string(last_boot))
+                boot_dict = json.loads(utils.bytes_to_string(last_boot))
 
                 # the serveo link needs to be lower case
                 remote_URL = boot_dict.get('remote_URL')
@@ -259,8 +303,11 @@ def get_list_of_devices_from_DS():
 #------------------------------------------------------------------------------
 def get_list_of_device_data_from_DS():
     res = {}
+    DS = get_client()
+    if DS is None:
+        return res
     res['devices'] = [] # list of devices with data from each
-    query = datastore_client.query(kind=DS_devices_KIND)
+    query = DS.query(kind=DS_devices_KIND)
     devices = list(query.fetch()) # get all devices 
     for d in devices:
         device = {}
@@ -291,7 +338,7 @@ def get_list_of_device_data_from_DS():
             last_boot = boot[0].get('value')
 
             # convert binary into string and then a dict
-            boot_dict = json.loads(_bytes_to_string(last_boot))
+            boot_dict = json.loads(utils.bytes_to_string(last_boot))
 
             # the serveo link needs to be lower case
             remote_URL = boot_dict.get('remote_URL')
@@ -359,10 +406,14 @@ def get_list_of_device_data_from_DS():
 # Returns '' for failure or the latest URL published by this device.
 def get_latest_image_URL(device_uuid):
     URL = ''
+    DS = get_client()
+    if DS is None:
+        return URL
+
     # Sort by date descending and take the first 50
     # This is equivalent to taking the most recent 50 images
     # Then, reverse the order so it's chronological
-    image_query = datastore_client.query(kind=DS_images_KIND,
+    image_query = DS.query(kind=DS_images_KIND,
                                          order=['-creation_date'])
     image_query.add_filter('device_uuid', '=', device_uuid)
 
@@ -378,20 +429,9 @@ def get_latest_image_URL(device_uuid):
 
 
 #------------------------------------------------------------------------------
-def decode_byte_string(byte_str):
-    # In case the value is stored as a blob (represented in python by a
-    # bytes object), decode it into a string.
-    try:
-        byte_str = byte_str.decode('utf-8')
-    except AttributeError:
-        pass
-    return byte_str
-
-
-#------------------------------------------------------------------------------
 def decode_url(image_entity):
     url = image_entity.get('URL', '')
-    return decode_byte_string(url)
+    return utils.bytes_to_string(url)
 
 
 #------------------------------------------------------------------------------
@@ -402,10 +442,10 @@ def get_latest_val_from_DeviceData(dd, key):
     valsList = dd.get(key, []) # list of values
     # return latest value and timestamp
     value = valsList[0].get('value', b'')
-    value = decode_byte_string(value) # could be bytes, so decode
+    value = utils.bytes_to_string(value) # could be bytes, so decode
 
     ts = valsList[0].get('timestamp', b'') 
-    ts = decode_byte_string(ts) # could be bytes, so decode
+    ts = utils.bytes_to_string(ts) # could be bytes, so decode
     return value, ts
 
 
@@ -424,6 +464,9 @@ def get_minutes_since_UTC_timestamp(ts):
 
 #------------------------------------------------------------------------------
 def get_latest_user_session_created_date_from_DS(user_uuid):
+    DS = get_client()
+    if DS is None:
+        return None
     sessions = get_all_from_DS(DS_user_session_KIND, 'user_uuid', user_uuid)
     if sessions is None or 0 == len(sessions):
         return None
@@ -435,7 +478,7 @@ def get_latest_user_session_created_date_from_DS(user_uuid):
     # delete all the old (stale) sessions that are not the latest
     for s in sessions:
         if dates[0] != s.get('created_date', '').strftime('%FT%XZ'):
-            datastore_client.delete(key=s.key)
+            DS.delete(key=s.key)
 
     return dates[0] # return the latest date (top of array)
 
@@ -443,17 +486,23 @@ def get_latest_user_session_created_date_from_DS(user_uuid):
 #------------------------------------------------------------------------------
 # Returns True for delete or False for error.
 def delete_user_from_DS(user_uuid):
+    DS = get_client()
+    if DS is None:
+        return False
     user = get_one_from_DS(DS_users_KIND, 'user_uuid', user_uuid)
     if user is None:
         return False
-    datastore_client.delete(key=user.key)
+    DS.delete(key=user.key)
     return True
 
 
 #------------------------------------------------------------------------------
 # Adds a (test) user to the DS (so we can test deleting in the admin UI).
 def add_user_to_DS(username, email_address, organization):
-    key = datastore_client.key(DS_users_KIND)
+    DS = get_client()
+    if DS is None:
+        return None
+    key = DS.key(DS_users_KIND)
     user_uuid = str(uuid.uuid4())
     add_user_task = datastore.Entity(key, exclude_from_indexes=[])
     add_user_task.update({
@@ -465,7 +514,7 @@ def add_user_to_DS(username, email_address, organization):
         'user_uuid': user_uuid,
         'is_verified': True,
     })
-    datastore_client.put(add_user_task)
+    DS.put(add_user_task)
     if add_user_task.key:
         return user_uuid
     return None
@@ -475,19 +524,22 @@ def add_user_to_DS(username, email_address, organization):
 # Delete a device_uuid from the Devices and DeviceData entity collections.
 # Returns True.
 def delete_device_from_DS(device_uuid):
+    DS = get_client()
+    if DS is None:
+        return False
     device = get_one_from_DS(DS_devices_KIND, 'device_uuid', device_uuid)
     if device is not None:
-        datastore_client.delete(key=device.key)
+        DS.delete(key=device.key)
 
     device_data = get_by_key_from_DS(DS_device_data_KIND, device_uuid)
     if device_data is not None:
-        datastore_client.delete(key=device_data.key)
+        DS.delete(key=device_data.key)
 
     # This entity does not exist as of 2019-01-07 but will when Rob adds it to
     # the MQTT service.  This call will just return None until then.
     last_device_data = get_by_key_from_DS(DS_last_device_data_KIND, device_uuid)
     if last_device_data is not None:
-        datastore_client.delete(key=last_device_data.key)
+        DS.delete(key=last_device_data.key)
 
     return True
 
@@ -495,7 +547,10 @@ def delete_device_from_DS(device_uuid):
 #------------------------------------------------------------------------------
 # Adds a (test) device to the DS (so we can test deleting in the admin UI).
 def add_device_to_DS(device_name, device_notes):
-    key = datastore_client.key(DS_devices_KIND)
+    DS = get_client()
+    if DS is None:
+        return None
+    key = DS.key(DS_devices_KIND)
     device_uuid = str(uuid.uuid4())
     add_device_task = datastore.Entity(key, exclude_from_indexes=[])
     add_device_task.update({
@@ -506,14 +561,143 @@ def add_device_to_DS(device_name, device_notes):
         'device_uuid': device_uuid,
         'user_uuid': str(uuid.uuid4()),
     })
-    datastore_client.put(add_device_task)
+    DS.put(add_device_task)
     if add_device_task.key:
         return device_uuid
     return None
 
 
+#------------------------------------------------------------------------------
+# Get the DeviceData property list of dicts.
+# Returns a list of dicts.
+def get_device_data_property(device_ID: str, property_name: str) -> List[Dict[str, str]]:
+    if device_ID is None or device_ID is 'None' or \
+            property_name is None or property_name is 'None':
+        return [{}]
+
+    dd = get_by_key_from_DS(DS_device_data_KIND, device_ID)
+    if dd is None:
+        return [{}]
+
+    return dd.get(property_name, [{}])
 
 
+#------------------------------------------------------------------------------
+# Save a bounded list of the recent values of each env. var. to the Device
+# that produced them - for UI display / charting.
+def push_dict_onto_device_data_queue(device_ID: str, 
+        property_name: str, pydict: Dict) -> bool:
+    try:
+        DS = get_client()
+        if DS is None:
+            return False
+
+        # Get this device data from the datastore (or create an empty one).
+        # These DeviceData entities are custom keyed with our device_ID.
+        ddkey = DS.key(DS_device_data_KIND, device_ID)
+        dd = DS.get(ddkey) 
+        if not dd: 
+            # The device data entity doesn't exist, so create it
+            dd = datastore.Entity(ddkey)
+            dd.update({})   # empty entity
+            DS.put(dd)      # write to DS
+
+        # retry the Entity update in a transaction until it succeeds
+        transactionWorked = False
+        for _ in range(15):
+            try:
+                with DS.transaction():
+                    dd = DS.get(ddkey)
+
+                    # get a property named for the env var, which is a list of
+                    # dict values
+                    valuesList = dd.get(property_name, [])
+
+                    # put this value at the front of the list
+                    valuesList.insert(0, pydict)
+                    # cap max size of list
+                    while len(valuesList) > DS_env_vars_MAX_size:
+                        valuesList.pop() # remove last item in list
+
+                    # update the entity
+                    dd[property_name] = valuesList 
+
+                    # save the entity to the datastore
+                    dd.exclude_from_indexes = dd.keys()
+                    DS.put(dd)  
+                    transactionWorked = True
+                    break
+            except Exception as e:
+                #logging.debug('save_data_to_Device: transaction failed '\
+                #        '{}'.format( e ))
+                continue
+        if not transactionWorked:
+            logging.error(f'push_dict_onto_device_data_queue: '
+                    f'transaction failed '
+                    f'for device_ID={device_ID} name={property_name}')
+            return False
+
+        logging.debug(f'push_dict_onto_device_data_queue: saved '
+                f'device_ID={device_ID} name={property_name} dict={pydict}')
+        return True
+
+    except Exception as e:
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        logging.critical( "Exception in save_data_to_Device(): %s" % e)
+        traceback.print_tb( exc_traceback, file=sys.stdout )
+        return False
+
+
+#------------------------------------------------------------------------------
+# Save a list of dicts to the DeviceData property.
+def save_list_as_device_data_queue(device_ID: str, 
+        property_name: str, pylist: List) -> bool:
+    try:
+        DS = get_client()
+        if DS is None:
+            return False
+
+        # Get this device data from the datastore (or create an empty one).
+        # These DeviceData entities are custom keyed with our device_ID.
+        ddkey = DS.key(DS_device_data_KIND, device_ID)
+        dd = DS.get(ddkey) 
+        if not dd: 
+            # The device data entity doesn't exist, so create it 
+            # (no transaction needed)
+            dd = datastore.Entity(ddkey)
+            dd.update({})   # empty entity
+            DS.put(dd)      # write to DS
+
+        # retry the Entity update in a transaction until it succeeds
+        transactionWorked = False
+        for _ in range(15):
+            try:
+                with DS.transaction():
+                    dd = DS.get(ddkey)
+                    dd[property_name] = pylist 
+                    dd.exclude_from_indexes = dd.keys()
+                    DS.put(dd)  
+                    transactionWorked = True
+                    break
+            except Exception as e:
+                #logging.debug('save_data_to_Device: transaction failed '\
+                #        '{}'.format( e ))
+                continue
+        if not transactionWorked:
+            logging.error(f'save_list_as_device_data_queue: '
+                    f'transaction failed '
+                    f'for device_ID={device_ID} name={property_name}')
+            return False
+
+        logging.debug(f'save_list_as_device_data_queue: saved '
+                f'device_ID={device_ID} name={property_name} list={pylist}')
+        return True
+
+    except Exception as e:
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        logging.critical(f'Exception in save_list_as_device_data_queue(): {e}')
+        traceback.print_tb( exc_traceback, file=sys.stdout )
+        return False
 
 
 
