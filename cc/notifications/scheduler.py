@@ -118,7 +118,7 @@ class Scheduler:
 
 
     #--------------------------------------------------------------------------
-    # Creates a DS dict entry for this command, 
+    # Creates a DS dict entry for this scheduled command, 
     # setting timestamp = now() + hours and count = 0.
     def add(self, device_ID: str, command: str, repeat_hours: int = -1) -> None:
         if not self.__validate_command(command):
@@ -167,6 +167,19 @@ class Scheduler:
         datastore.save_list_as_device_data_queue(device_ID, 
                 self.schedule_property, sched_list)
         logging.debug(f'{self.name}.add-ed to list: {sched_list}')
+
+
+    #--------------------------------------------------------------------------
+    # Create a single notification right away, no scheduling.
+    def create_notification(self, device_ID: str, command: str) -> None:
+        if not self.__validate_command(command):
+            logging.error(f'{self.name}.create_notification invalid '
+                    f'command {command}')
+            return
+        template = self.commands.get(command, {})
+        cmd_msg = template.get(self.message_key, '')
+        nd = NotificationData()
+        nd.add(device_ID, cmd_msg)
 
 
     #--------------------------------------------------------------------------
@@ -251,10 +264,10 @@ class Scheduler:
         nd.add(device_ID, cmd_msg)
 
         # For the take measurements command, the first repeat time is a week,
-        # then it repeats every 48 hours.
+        # then it repeats every default (48) hours.
         default_repeat = cmd.get(self.repeat_key)
         if cmd_name == self.take_measurements_command:
-            template = self.commands.get(command, {})
+            template = self.commands.get(cmd_name, {})
             default_repeat = template.get(self.default_repeat_hours_key, 0)
 
         # Does this command repeat?
@@ -288,10 +301,9 @@ class Scheduler:
         sched_list = self.__get_schedule(device_ID)
         for cmd in sched_list:
             cmd_name = cmd.get(self.command_key)
-            logging.debug(f'{self.name}.check-ing command={cmd_name}')
-
+            logging.debug(f'{self.name}.checking command={cmd_name}')
             # Has the command run at time passed?
-            if cmd.get(self.run_at_key) >= now_str:
+            if now_str >= cmd.get(self.run_at_key):
                 # Yes, so execute it.
                 self.__execute(device_ID, now, cmd)
 
