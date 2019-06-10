@@ -8,12 +8,12 @@
 import datetime as dt
 import json, logging, pprint
 
-from typing import Dict, List
+from typing import Dict, List, Any
 
 from cloud_common.cc import utils 
 from cloud_common.cc.google import env_vars 
 from cloud_common.cc.google import datastore
-from cloud_common.cc.notifications.notifications import Notifications
+from cloud_common.cc.notifications.notification_data import NotificationData
 
 
 """
@@ -95,7 +95,7 @@ class Scheduler:
 
 
     #--------------------------------------------------------------------------
-    # Return the schedule for a device.  For testing and debugging.
+    # Return a string of the schedule for a device.  For testing and debugging.
     def to_str(self, device_ID: str) -> str:
         pp = pprint.PrettyPrinter()
         out = pp.pformat(self.__get_schedule(device_ID))
@@ -148,16 +148,20 @@ class Scheduler:
         # get the list of all command dicts
         sched_list = self.__get_schedule(device_ID)
 
-        # see if this command already exists in the list
-        cmd_index = -1
-        for i in range(len(sched_list)):
-            if sched_list[i].get(self.command_key) == command:
-                cmd_index = i
-                break
-        if cmd_index >= 0:
-            sched_list[cmd_index] = cmd_dict # yes, so replace it
+        # check for an empty first element (happens with a new DS entity)
+        if 1 == len(sched_list) and 0 == len(sched_list[0]):
+            sched_list[0] = cmd_dict # overwrite empty first dict
         else:
-            sched_list.append(cmd_dict)      # no, so append it
+            # see if this command already exists in the list
+            cmd_index = -1
+            for i in range(len(sched_list)):
+                if sched_list[i].get(self.command_key) == command:
+                    cmd_index = i
+                    break
+            if cmd_index >= 0:
+                sched_list[cmd_index] = cmd_dict # yes, so replace it
+            else:
+                sched_list.append(cmd_dict)      # no, so append it
 
         # Store in datastore.DeviceData<device_ID>.schedule as a list of dicts:
         datastore.save_list_as_device_data_queue(device_ID, 
@@ -236,22 +240,22 @@ class Scheduler:
     # private internal method: 
     # Execute the command:
     #   Adds notifications to a devices queue.
-    def __execute(self, device_ID: str, now: str, cmd: Dict[str, str]) -> None:
+    def __execute(self, device_ID: str, now: Any, cmd: Dict[str, str]) -> None:
         logging.debug(f'{self.name}.__execute {cmd}')
 
         cmd_name = cmd.get(self.command_key)
         cmd_msg = cmd.get(self.message_key)
 
         # All our existing commands just create a notification
-        n = Notifications()
-        n.add(device_ID, cmd_msg)
+        nd = NotificationData()
+        nd.add(device_ID, cmd_msg)
 
-        # If we ever need to do something command specific:
-        #if cmd_name == self.check_fluid_command:
-        #elif cmd_name == self.take_measurements_command:
-        #elif cmd_name == self.harvest_plant_command:
-        #else:
-        #    logging.critical(f'{self.name}.__execute {cmd_name} not handled')
+        # For the take measurements command, the first repeat time is a week,
+        # then it repeats every 48 hours.
+        default_repeat = cmd.get(self.repeat_key)
+        if cmd_name == self.take_measurements_command:
+            template = self.commands.get(command, {})
+            default_repeat = template.get(self.default_repeat_hours_key, 0)
 
         # Does this command repeat?
         repeat = cmd.get(self.repeat_key, 0)
@@ -261,12 +265,13 @@ class Scheduler:
             logging.debug(f'{self.name}.check removed {cmd_name}')
         else:
             # Update the count and next run time.
-            cmd[count_key] = cmd.get(self.count_key, 0) + 1
-            run_at = now + dt.timedelta(hours=cmd.get(self.repeat_key))
+            cmd[self.count_key] = cmd.get(self.count_key, 0) + 1
+            run_at = now + dt.timedelta(hours=default_repeat)
             cmd[self.run_at_key] = run_at.strftime('%FT%XZ')
             # Put this command back in the list and save it.
             self.replace_command(device_ID, cmd)
             logging.debug(f'{self.name}.check updated/replaced {cmd}')
+
 
     #--------------------------------------------------------------------------
     # Check the schedule for this device to see if there is anything to run.
@@ -274,8 +279,9 @@ class Scheduler:
         # For testing the schedule without waiting for wall clock time,
         # use the offset externally set to adjust the "now" time.
         now = dt.datetime.utcnow() + dt.timedelta(hours=self.__testing_hours)
+        now_str = now.strftime('%FT%XZ')
         logging.debug(f'{self.name}.check '
-                f'testing_hours={self.__testing_hours} now={now}')
+                f'testing_hours={self.__testing_hours} now={now_str}')
 
         # Iterate the schedule entries for device_ID acting upon entries that
         # have a timestamp <= now() 
@@ -285,7 +291,7 @@ class Scheduler:
             logging.debug(f'{self.name}.check-ing command={cmd_name}')
 
             # Has the command run at time passed?
-            if cmd.get(self.run_at_key) >= now:
+            if cmd.get(self.run_at_key) >= now_str:
                 # Yes, so execute it.
                 self.__execute(device_ID, now, cmd)
 

@@ -21,10 +21,10 @@ def create_clients() -> None:
     global __subs_client
     global __pubs_client 
 
-    if __subs_client is not None:
+    if __subs_client is None:
         __subs_client = pubsub.SubscriberClient()
 
-    if __pubs_client is not None:
+    if __pubs_client is None:
         __pubs_client = pubsub.PublisherClient()
 
 
