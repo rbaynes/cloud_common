@@ -13,6 +13,7 @@ from typing import Dict, List
 from cloud_common.cc import utils 
 from cloud_common.cc.google import env_vars 
 from cloud_common.cc.google import datastore
+from cloud_common.cc.notifications.notifications import Notifications
 
 
 """
@@ -51,7 +52,7 @@ class Scheduler:
             {message_key: 'Check your fluid level', 
              default_repeat_hours_key: 48},
         take_measurements_command: 
-            {message_key: 'Record your plant measurementsl', 
+            {message_key: 'Record your plant measurements', 
              default_repeat_hours_key: 24},
         harvest_plant_command: 
             {message_key: 'Time to harvest your plant', 
@@ -64,7 +65,7 @@ class Scheduler:
 
     #--------------------------------------------------------------------------
     def __init__(self) -> None:
-        self.testing_hours = 0
+        self.__testing_hours = 0
         datastore.create_client(env_vars.cloud_project_id)
 
 
@@ -172,14 +173,16 @@ class Scheduler:
         # get the list of all command dicts
         sched_list = self.__get_schedule(device_ID)
 
-        # see if this command already exists in the list
-        for cd in sched_list:
-            if cd.get(self.command_key) != command:
-                # build a new list that doesn't include the removed command
-                new_list.append(cd)
-        if len(new_list) > 0:
-            datastore.save_list_as_device_data_queue(device_ID, 
-                self.schedule_property, new_list)
+        # iterate the list
+        for cmd in sched_list:
+            # if this command is NOT the one we want to remove
+            if cmd.get(self.command_key) != command:
+                # add it to a new list 
+                new_list.append(cmd)
+
+        # save the new list over the old one.
+        datastore.save_list_as_device_data_queue(device_ID, 
+            self.schedule_property, new_list)
         logging.debug(f'{self.name}.remove_command {command} from list: {new_list}')
 
 
@@ -193,31 +196,99 @@ class Scheduler:
 
 
     #--------------------------------------------------------------------------
-    # Set the number of hours, for use when testing check().
-    def testing_hours(self, hours: int = 0) -> None:
-        self.testing_hours = hours
-#debugrob: use above
+    # Replaces a command in the list.  
+    # If the command isn't already in the list, nothing changes.
+    def replace_command(self, device_ID: str, 
+                        command_dict: Dict[str, str]) -> None:
+        cmd_name = command_dict.get(self.command_key, None)
 
+        if not self.__validate_command(cmd_name):
+            logging.error(f'{self.name}.replace_command invalid {cmd_name}')
+            return
+
+        # get the list of all command dicts
+        sched_list = self.__get_schedule(device_ID)
+
+        # iterate the list
+        for i in range(len(sched_list)):
+            cmd = sched_list[i]
+            # if this command IS the one we want to replace
+            if cmd.get(self.command_key) == cmd_name:
+
+                # replace this entry in the list with the new cmd
+                sched_list[i] = command_dict
+
+                # save the new list over the old one.
+                datastore.save_list_as_device_data_queue(device_ID, 
+                    self.schedule_property, sched_list)
+                break
+        logging.debug(f'{self.name}.replace_command '
+            f'{command_dict.get(self.command_key)} in list: {sched_list}')
+
+
+    #--------------------------------------------------------------------------
+    # Set the number of hours, for use when testing check().
+    def set_testing_hours(self, hours: int = 0) -> None:
+        self.__testing_hours = hours
+
+
+    #--------------------------------------------------------------------------
+    # private internal method: 
+    # Execute the command:
+    #   Adds notifications to a devices queue.
+    def __execute(self, device_ID: str, now: str, cmd: Dict[str, str]) -> None:
+        logging.debug(f'{self.name}.__execute {cmd}')
+
+        cmd_name = cmd.get(self.command_key)
+        cmd_msg = cmd.get(self.message_key)
+
+        # All our existing commands just create a notification
+        n = Notifications()
+        n.add(device_ID, cmd_msg)
+
+        # If we ever need to do something command specific:
+        #if cmd_name == self.check_fluid_command:
+        #elif cmd_name == self.take_measurements_command:
+        #elif cmd_name == self.harvest_plant_command:
+        #else:
+        #    logging.critical(f'{self.name}.__execute {cmd_name} not handled')
+
+        # Does this command repeat?
+        repeat = cmd.get(self.repeat_key, 0)
+        if repeat == 0:
+            # No, so remove the command from the schedule.
+            self.remove_command(device_ID, cmd_name)
+            logging.debug(f'{self.name}.check removed {cmd_name}')
+        else:
+            # Update the count and next run time.
+            cmd[count_key] = cmd.get(self.count_key, 0) + 1
+            run_at = now + dt.timedelta(hours=cmd.get(self.repeat_key))
+            cmd[self.run_at_key] = run_at.strftime('%FT%XZ')
+            # Put this command back in the list and save it.
+            self.replace_command(device_ID, cmd)
+            logging.debug(f'{self.name}.check updated/replaced {cmd}')
 
     #--------------------------------------------------------------------------
     # Check the schedule for this device to see if there is anything to run.
     def check(self, device_ID: str) -> None:
-#debugrob: fix here down
-        return
-        """
-iterate the schedule entries for device_ID acting upon entries that have a timestamp <= now() 
-if a command has a repeat_hours value > 0, then update its timestamp when executing it.
-update the count of times the command has been executed.
-write notifications the UI will render 
-Notifications.add(..)
-notification_ID: UUID generated when notification created
-message: <yada>
-timestamp: <TS in UTC>
-acknowledged: <TS in UTC>
-Handle init. and term. logic, such as:
-if we are repeating the take_measurements command and count == 1, then set the repeat interval to 24 hours.
+        # For testing the schedule without waiting for wall clock time,
+        # use the offset externally set to adjust the "now" time.
+        now = dt.datetime.utcnow() + dt.timedelta(hours=self.__testing_hours)
+        logging.debug(f'{self.name}.check '
+                f'testing_hours={self.__testing_hours} now={now}')
 
-        cmd_dict[self.count_key]   = cmd_dict.get(self.count_key, 0) + 1
-        """
+        # Iterate the schedule entries for device_ID acting upon entries that
+        # have a timestamp <= now() 
+        sched_list = self.__get_schedule(device_ID)
+        for cmd in sched_list:
+            cmd_name = cmd.get(self.command_key)
+            logging.debug(f'{self.name}.check-ing command={cmd_name}')
+
+            # Has the command run at time passed?
+            if cmd.get(self.run_at_key) >= now:
+                # Yes, so execute it.
+                self.__execute(device_ID, now, cmd)
+
+
 
 

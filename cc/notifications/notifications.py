@@ -23,13 +23,24 @@ class Notifications:
 
     # Message types we send and receive
     recipe_start: str = 'recipe_start' # new recipe started
-    recipe_stop: str = 'recipe_stop' # user stopped it
-    recipe_end: str = 'recipe_end' # recipe concluded naturally
+    recipe_stop: str  = 'recipe_stop'  # user stopped it
+    recipe_end: str   = 'recipe_end'   # recipe concluded naturally
 
     # Message dict keys
     device_ID_key: str    = "device_ID"
     message_type_key: str = "message_type"
     message_key: str      = "message"
+
+    # Notification types for display to user
+    nofification_type_OK: str = "OK"   # show an OK button for user to click
+    # other types later, such as Yes/No, Error, Warning, etc
+
+    # Notification dict keys
+    nofification_ID_key: str            = "ID"
+    nofification_type_key: str          = "type"
+    nofification_message_key: str       = "message"
+    nofification_created_key: str       = "created"
+    nofification_acknowledged_key: str  = "acknowledged"
 
     # For logging
     name: str = 'cloud_common.cc.notifications.notifications'
@@ -137,9 +148,17 @@ Runs.stop( device_ID )
     #--------------------------------------------------------------------------
     # Add a new notification for this device, set created TS to now().
     # Returns the notification ID string.
-    def add(self, device_ID: str, notification_type: str, message: str ) -> str:
+    def add(self, device_ID: str, message: str, 
+            notification_type: str = nofification_type_OK ) -> str:
         notification_ID = None
         #debugrob
+        """
+    nofification_ID_key
+    nofification_type_key
+    nofification_message_key
+    nofification_created_key
+    nofification_acknowledged_key
+        """
         return notification_ID
 
 
