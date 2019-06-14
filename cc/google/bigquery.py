@@ -6,8 +6,10 @@
 import ast
 from google.cloud import bigquery
 
-# This should be the only place we use queries.
-from queries import queries
+from cloud_common.cc.google import env_vars
+
+# This should be the only place we store queries.
+from cloud_common.cc.google import queries
 
 bigquery_client = bigquery.Client()
 
@@ -45,5 +47,26 @@ def get_temp_and_humidity_history_from_BQ(device_uuid):
             result_json["RH"].append(
                 {'value': values[0]['value'], 'time': row.eastern_time})
     return result_json
+
+
+#------------------------------------------------------------------------------
+# Insert data into our bigquery dataset and table.
+def data_insert(rowsList):
+    try:
+        logging.info( "bq insert rows: {}".format( rowList ))
+
+        dataset_ref = bigquery_client.dataset( env_vars.bq_dataset, 
+                project=env_vars.cloud_project_id )
+        table_ref = dataset_ref.table( env_vars.bq_table )
+        table = bigquery_client.get_table( table_ref )               
+
+        response = bigquery_client.insert_rows( table, rowList )
+        logging.debug( 'bq response: {}'.format( response ))
+
+        return True
+
+    except Exception as e:
+        logging.critical( "bigquery.data_insert: Exception: %s" % e )
+        return False
 
 

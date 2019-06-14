@@ -7,6 +7,7 @@ from typing import Any, List, Dict
 from google.cloud import datastore
 
 from cloud_common.cc import utils 
+from cloud_common.cc.google import env_vars
 
 
 # Entity types 
@@ -57,8 +58,7 @@ def create_client(cloud_project_id) -> None:
 def get_client() -> Any:
     global __ds_client 
     if __ds_client is None:
-        logging.error(f'cloud_common.cc.google.datastore you must call create_client() first.')
-        return None
+        __ds_client = create_client(env_vars.cloud_project_id)
     return __ds_client
 
 
@@ -700,6 +700,26 @@ def save_list_as_device_data_queue(device_ID: str,
         return False
 
 
+#------------------------------------------------------------------------------
+# Save the URL to an image in cloud storage, as an entity in the datastore, 
+# so the UI can fetch it for display / time lapse.
+def saveImageURL(deviceId, publicURL, cameraName):
+    DS = get_client()
+    if DS is None:
+        return 
+    key = DS.key(self.DS_images_KEY)
+    image = datastore.Entity(key, exclude_from_indexes=[])
+    cd = time.strftime( '%FT%XZ', time.gmtime())
+    # Don't use a dict, the strings will be assumed to be "blob" and will be
+    # shown as base64 in the console.
+    # Use the Entity like a dict to get proper strings.
+    image['device_uuid'] = deviceId
+    image['URL'] = publicURL
+    image['camera_name'] = cameraName
+    image['creation_date'] = cd
+    DS.put(image)  
+    logging.info("datastore.saveImageURL: saved {}".format( image ))
+    return 
 
 
 

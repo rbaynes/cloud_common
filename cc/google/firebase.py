@@ -14,7 +14,7 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
 
-from .env_vars import path_to_firebase_service_account
+from cloud_common.cc.google import env_vars
 
 
 #------------------------------------------------------------------------------
@@ -28,7 +28,7 @@ def get_firestore_client(fb_service_account_json):
 
 #------------------------------------------------------------------------------
 # Get a firebase client using the firebase auth
-fs_client = get_firestore_client(path_to_firebase_service_account)
+fs_client = get_firestore_client(env_vars.path_to_firebase_service_account)
 
 
 #------------------------------------------------------------------------------

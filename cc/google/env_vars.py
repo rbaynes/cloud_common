@@ -16,6 +16,7 @@ dev_events = os.getenv('GCLOUD_DEV_EVENTS')
 bq_dataset = os.getenv('BQ_DATASET')
 bq_table = os.getenv('BQ_TABLE')
 cs_bucket = os.getenv('CS_BUCKET')
+cs_upload_bucket = os.getenv('CS_UPLOAD_BUCKET')
 
 
 
