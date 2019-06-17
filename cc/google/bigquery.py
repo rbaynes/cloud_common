@@ -3,7 +3,7 @@
 # BigQuery is SLOW.  Only use it for research queries and warn the user.
 # Note: most data from the device is cached in the datastore.
 
-import ast
+import ast, logging
 from google.cloud import bigquery
 
 from cloud_common.cc.google import env_vars
@@ -53,14 +53,14 @@ def get_temp_and_humidity_history_from_BQ(device_uuid):
 # Insert data into our bigquery dataset and table.
 def data_insert(rowsList):
     try:
-        logging.info( "bq insert rows: {}".format( rowList ))
+        logging.info( "bq insert rows: {}".format(rowsList))
 
         dataset_ref = bigquery_client.dataset( env_vars.bq_dataset, 
                 project=env_vars.cloud_project_id )
         table_ref = dataset_ref.table( env_vars.bq_table )
         table = bigquery_client.get_table( table_ref )               
 
-        response = bigquery_client.insert_rows( table, rowList )
+        response = bigquery_client.insert_rows( table, rowsList)
         logging.debug( 'bq response: {}'.format( response ))
 
         return True

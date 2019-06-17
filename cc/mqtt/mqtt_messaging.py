@@ -4,7 +4,7 @@
     - Handles messages published by our devices.
 """
 
-import sys, logging, ast
+import sys, logging, ast, time
 from datetime import datetime
 
 from typing import Dict
@@ -25,6 +25,8 @@ class MQTTMessaging:
     messageType_KEY = 'messageType'
     messageType_EnvVar = 'EnvVar'
     messageType_CommandReply = 'CommandReply'
+    # deprecate processing of 'Image' messages, 
+    # but keep the type for UI backwards compatability
     messageType_Image = 'Image' 
     messageType_ImageUpload = 'ImageUpload'
 
@@ -32,7 +34,7 @@ class MQTTMessaging:
     var_KEY = 'var'
     values_KEY = 'values'
 
-    # keys for messageType='Image'
+    # keys for messageType='Image' (and uploads)
     varName_KEY = 'varName'
     imageType_KEY = 'imageType'
     fileName_KEY = 'fileName'
@@ -58,47 +60,76 @@ class MQTTMessaging:
             logging.error(f'{self.name}.parse: invalid message={message}')
             return 
 
-        if messageType_Image == self.validateMessageType(pydict):
+        if self.messageType_Image == self.get_message_type(message):
             logging.warning(f'{self.name}.parse: ignoring old chunked images '
                     'from old clients.')
             return 
 
         # New way of handling (already) uploaded images.  
-        if messageType_ImageUpload == self.validateMessageType(pydict):
-            self.save_uploaded_image(pydict, device_ID)
+        if self.messageType_ImageUpload == self.get_message_type(message):
+            self.save_uploaded_image(message, device_ID)
             return
 
         # Save the most recent data as properties on the Device entity in the
         # datastore.
-        self.save_data_to_Device(pydict, device_ID)
+        self.save_data_to_Device(message, device_ID)
 
         # Also insert into BQ (Env vars and command replies)
-        rowList = []
-        if self.makeBQRowList(pydict, device_ID, rowList):
+        rowsList = []
+        if self.makeBQRowList(message, device_ID, rowsList):
             bigquery.data_insert(rowsList)
 
 
     #--------------------------------------------------------------------------
+    # Validate the pubsub message we received.
+    # Returns True for valid, False otherwise.
+    def validate_message(self, message: Dict[str, str]) -> bool:
+        if not utils.key_in_dict(message, self.messageType_KEY):
+            return False
+        message_type = self.get_message_type(message)
+        if not (message_type == self.messageType_EnvVar or \
+                message_type == self.messageType_CommandReply or \
+                message_type == self.messageType_Image or \
+                message_type == self.messageType_ImageUpload):
+            return False
+        if message_type == self.messageType_EnvVar or \
+                message_type == self.messageType_CommandReply:
+            # mandatory keys for msg types 'EnvVar' and 'CommandReply'
+            if not (utils.key_in_dict(message, self.var_KEY) or \
+                    utils.key_in_dict(message, self.values_KEY)):
+                return False
+        if message_type == self.messageType_Image or \
+                message_type == self.messageType_ImageUpload:
+            # mandatory keys for image messages
+            if not (utils.key_in_dict(message, self.varName_KEY) or \
+                    utils.key_in_dict(message, self.imageType_KEY) or \
+                    utils.key_in_dict(message, self.fileName_KEY)):
+                return False
+        return True
+
+
+    #--------------------------------------------------------------------------
     # Returns the messageType key if valid, else None.
-    def validateMessageType(self, valueDict):
-        if not utils.key_in_dict(valueDict, self.messageType_KEY):
+    def get_message_type(self, message):
+        if not utils.key_in_dict(message, self.messageType_KEY):
             logging.error('Missing key %s' % self.messageType_KEY)
             return None
 
-        if self.messageType_EnvVar == valueDict.get(self.messageType_KEY):
+        if self.messageType_EnvVar == message.get(self.messageType_KEY):
             return self.messageType_EnvVar
 
-        if self.messageType_CommandReply == valueDict.get(self.messageType_KEY):
+        if self.messageType_CommandReply == message.get(self.messageType_KEY):
             return self.messageType_CommandReply
 
-        if self.messageType_Image == valueDict.get(self.messageType_KEY):
+        # deprecated
+        if self.messageType_Image == message.get(self.messageType_KEY):
             return self.messageType_Image
 
-        if self.messageType_ImageUpload == valueDict.get(self.messageType_KEY):
+        if self.messageType_ImageUpload == message.get(self.messageType_KEY):
             return self.messageType_ImageUpload
 
-        logging.error('validateMessageType: Invalid value {} for key {}'.format(
-            valueDict.get(self.messageType_KEY), self.messageType_KEY ))
+        logging.error('get_message_type: Invalid value {} for key {}'.format(
+            message.get(self.messageType_KEY), self.messageType_KEY ))
         return None
 
 
@@ -107,8 +138,8 @@ class MQTTMessaging:
     # (python will pass only mutable objects (list) by reference)
     def makeBQEnvVarRowList(self, valueDict, deviceId, rowsList, idKey):
         # each received EnvVar type message must have these fields
-        if not utils.key_in_dict( valueDict, self.var_KEY ) or \
-           not utils.key_in_dict( valueDict, self.values_KEY ):
+        if not utils.key_in_dict(valueDict, self.var_KEY ) or \
+           not utils.key_in_dict(valueDict, self.values_KEY ):
             logging.error('makeBQEnvVarRowList: Missing key(s) in dict.')
             return
 
@@ -122,9 +153,9 @@ class MQTTMessaging:
         # NEW ID format:  <KEY>~<valName>~<created UTC TS>~<deviceId>
         ID = idKey + '~{}~{}~' + deviceId
 
-        row = ( ID.format( varName, 
-            time.strftime( '%FT%XZ', time.gmtime() )), # id column
-            values, 0, 0 ) # values column, with zero for X, Y
+        row = (ID.format(varName, 
+            time.strftime('%FT%XZ', time.gmtime())), # id column
+            values, 0, 0) # values column, with zero for X, Y
 
         rowsList.append(row)
 
@@ -133,7 +164,7 @@ class MQTTMessaging:
     # returns True if there are rows to insert into BQ, false otherwise.
     def makeBQRowList(self, valueDict, deviceId, rowsList):
 
-        messageType = self.validateMessageType( valueDict )
+        messageType = self.get_message_type( valueDict )
         if None == messageType:
             return False
 
@@ -155,13 +186,13 @@ class MQTTMessaging:
     # that produced them - for UI display / charting.
     def save_data_to_Device(self, pydict, deviceId):
         try:
-            if self.messageType_EnvVar != self.validateMessageType(pydict) and \
-            self.messageType_CommandReply != self.validateMessageType(pydict):
+            if self.messageType_EnvVar != self.get_message_type(pydict) and \
+            self.messageType_CommandReply != self.get_message_type(pydict):
                 return
 
             # each received EnvVar type message must have these fields
-            if not utils.key_in_dictvalidDictKey( pydict, self.var_KEY ) or \
-                not utils.key_in_dictvalidDictKey( pydict, self.values_KEY ):
+            if not utils.key_in_dict(pydict, self.var_KEY ) or \
+                not utils.key_in_dict(pydict, self.values_KEY ):
                 logging.error('save_data_to_Device: Missing key(s) in dict.')
                 return
             varName = pydict[ self.var_KEY ]
@@ -177,15 +208,13 @@ class MQTTMessaging:
                     varName, valueToSave)
 
         except Exception as e:
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            logging.critical( "Exception in save_data_to_Device(): %s" % e)
-            traceback.print_tb( exc_traceback, file=sys.stdout )
+            logging.critical(f"Exception in save_data_to_Device(): {e}")
 
 
     #--------------------------------------------------------------------------
     # Private method to get the value from a string of data from the device
     # or DB.  Handles weird stuff like a string in a string.
-    def __string_to_value(string):
+    def __string_to_value(self, string):
         try:
             values = ast.literal_eval( string ) # if this works, great!
             firstVal = values['values'][0]
@@ -210,7 +239,7 @@ class MQTTMessaging:
     #--------------------------------------------------------------------------
     # Private method to get the name from a string of data from the device
     # or DB.  Handles weird stuff like a string in a string.
-    def __string_to_name( string ):
+    def __string_to_name(self, string):
         try:
             values = ast.literal_eval( string ) # if this works, great!
             firstVal = values['values'][0]
@@ -241,13 +270,13 @@ class MQTTMessaging:
     # messaging) and gives us a hook to move the image and save its URL.
     def save_uploaded_image(self, pydict, deviceId):
         try:
-            if self.messageType_ImageUpload != self.validateMessageType(pydict):
+            if self.messageType_ImageUpload != self.get_message_type(pydict):
                 logging.error("save_uploaded_image: invalid message type")
                 return
 
             # each received image message must have these fields
-            if not utils.key_in_dictvalidDictKey(pydict, self.varName_KEY) or \
-            not utils.key_in_dictvalidDictKey(pydict, self.fileName_KEY ):
+            if not utils.key_in_dict(pydict, self.varName_KEY) or \
+            not utils.key_in_dict(pydict, self.fileName_KEY ):
                 logging.error('save_uploaded_image: missing key(s) in dict.')
                 return
 
@@ -306,8 +335,8 @@ class MQTTMessaging:
 
                 # Generate the data that will be sent to BigQuery for insertion.
                 # Each value must be a row that matches the table schema.
-                rowList = []
-                if self.makeBQRowList(pydict, deviceId, rowList):
+                rowsList = []
+                if self.makeBQRowList(pydict, deviceId, rowsList):
                     bigquery.data_insert(rowsList)
 
                 delta = datetime.now() - start
@@ -319,8 +348,6 @@ class MQTTMessaging:
             storage.delete_files_over_two_hours_old(env_vars.cs_upload_bucket)
 
         except Exception as e:
-            exc_type, exc_value, exc_traceback = sys.exc_info()
             logging.critical(f"Exception in save_uploaded_image(): {e}")
-            traceback.print_tb( exc_traceback, file=sys.stdout )
 
 
