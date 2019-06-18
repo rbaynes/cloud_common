@@ -17,7 +17,6 @@ from cloud_common.cc.google import datastore
 from cloud_common.cc.google import bigquery 
 from cloud_common.cc.notifications.notification_messaging import NotificationMessaging
 
-#debugrob:  use notification messaging class to send notif for recipe events when the brain sends them
 
 class MQTTMessaging:
 
@@ -29,6 +28,7 @@ class MQTTMessaging:
     # but keep the type for UI backwards compatability
     messageType_Image = 'Image' 
     messageType_ImageUpload = 'ImageUpload'
+    messageType_RecipeEvent = 'RecipeEvent'
 
     # keys for messageType='EnvVar' (and also 'CommandReply')
     var_KEY = 'var'
@@ -38,6 +38,10 @@ class MQTTMessaging:
     varName_KEY = 'varName'
     imageType_KEY = 'imageType'
     fileName_KEY = 'fileName'
+
+    # keys for messageType='RecipeEvent' 
+    recipeAction_KEY = 'action'
+    recipeName_KEY = 'name'
 
     # keys for datastore entities
     DS_device_data_KEY = 'DeviceData'
@@ -50,7 +54,7 @@ class MQTTMessaging:
 
     #--------------------------------------------------------------------------
     def __init__(self) -> None:
-        pass # nothing to do to construct this class
+        self.notification_messaging = NotificationMessaging()
 
 
     #--------------------------------------------------------------------------
@@ -68,6 +72,26 @@ class MQTTMessaging:
         # New way of handling (already) uploaded images.  
         if self.messageType_ImageUpload == self.get_message_type(message):
             self.save_uploaded_image(message, device_ID)
+            return
+
+        # Device sent a recipe event (start or stop) and we must 
+        # republish a notification message to the notifications topic
+        # using our NotificationMessaging class.
+        if self.messageType_RecipeEvent == self.get_message_type(message):
+            action = message.get(self.recipeAction_KEY)
+            message_type = None
+            if action == 'start':
+                message_type = NotificationMessaging.recipe_start
+            elif action == 'stop':
+                message_type = NotificationMessaging.recipe_stop
+            elif action == 'end':
+                message_type = NotificationMessaging.recipe_end
+            if message_type is None:
+                logging.error(f'{self.name}.parse: invalid recipe event '
+                        f'action={action}')
+                return
+            name = message.get(self.recipeName_KEY)
+            self.notification_messaging.publish(device_ID, message_type, name)
             return
 
         # Save the most recent data as properties on the Device entity in the
@@ -90,7 +114,8 @@ class MQTTMessaging:
         if not (message_type == self.messageType_EnvVar or \
                 message_type == self.messageType_CommandReply or \
                 message_type == self.messageType_Image or \
-                message_type == self.messageType_ImageUpload):
+                message_type == self.messageType_ImageUpload or \
+                message_type == self.messageType_RecipeEvent):
             return False
         if message_type == self.messageType_EnvVar or \
                 message_type == self.messageType_CommandReply:
@@ -104,6 +129,11 @@ class MQTTMessaging:
             if not (utils.key_in_dict(message, self.varName_KEY) or \
                     utils.key_in_dict(message, self.imageType_KEY) or \
                     utils.key_in_dict(message, self.fileName_KEY)):
+                return False
+        if message_type == self.messageType_RecipeEvent:
+            # mandatory keys for recipe event messages
+            if not (utils.key_in_dict(message, self.recipeAction_KEY) or \
+                    utils.key_in_dict(message, self.recipeName_KEY)):
                 return False
         return True
 
@@ -127,6 +157,9 @@ class MQTTMessaging:
 
         if self.messageType_ImageUpload == message.get(self.messageType_KEY):
             return self.messageType_ImageUpload
+
+        if self.messageType_RecipeEvent == message.get(self.messageType_KEY):
+            return self.messageType_RecipeEvent
 
         logging.error('get_message_type: Invalid value {} for key {}'.format(
             message.get(self.messageType_KEY), self.messageType_KEY ))
