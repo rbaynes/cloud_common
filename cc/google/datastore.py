@@ -1,7 +1,7 @@
 # https://google-cloud-python.readthedocs.io/en/stable/datastore/usage.html
 
 import datetime as dt
-import uuid, json, logging
+import uuid, json, logging, time
 from typing import Any, List, Dict
 
 from google.cloud import datastore
@@ -47,18 +47,16 @@ __ds_client = None
 
 #------------------------------------------------------------------------------
 # Datastore client for google cloud
-def create_client(cloud_project_id) -> None:
-    global __ds_client 
-    if __ds_client is None:
-        __ds_client = datastore.Client(cloud_project_id)
-        logging.debug(f'cloud_common.cc.google.datastore client created.')
+def create_client() -> Any:
+    logging.debug(f'cloud_common.cc.google.datastore client created.')
+    return datastore.Client(env_vars.cloud_project_id)
 
 
 #------------------------------------------------------------------------------
 def get_client() -> Any:
     global __ds_client 
     if __ds_client is None:
-        __ds_client = create_client(env_vars.cloud_project_id)
+        __ds_client = create_client()
     return __ds_client
 
 
@@ -707,7 +705,7 @@ def saveImageURL(deviceId, publicURL, cameraName):
     DS = get_client()
     if DS is None:
         return 
-    key = DS.key(self.DS_images_KEY)
+    key = DS.key(DS_images_KIND)
     image = datastore.Entity(key, exclude_from_indexes=[])
     cd = time.strftime( '%FT%XZ', time.gmtime())
     # Don't use a dict, the strings will be assumed to be "blob" and will be

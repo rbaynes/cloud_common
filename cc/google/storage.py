@@ -1,6 +1,6 @@
 # https://google-cloud-python.readthedocs.io/en/stable/storage/client.html
 
-import logging
+import logging, time
 from datetime import datetime, timezone
 from google.cloud import storage
 
@@ -102,10 +102,10 @@ def moveFileBetweenBuckets(src_bucket, dest_bucket, file_name):
 # Return the public URL to the file in a cloud storage bucket.
 def saveFile(varName, imageType, imageBytes, deviceId ):
 
-    bucket = storage_client.bucket(env_vars.cs_bucket)
+    bucket = storage_client.get_bucket(env_vars.cs_bucket)
     filename = '{}_{}_{}.{}'.format( deviceId, varName,
         time.strftime( '%FT%XZ', time.gmtime() ), imageType )
-    blob = bucket.blob( filename )
+    blob = bucket.blob( filename ) # make a new blob
 
     content_type = 'image/{}'.format( imageType )
 

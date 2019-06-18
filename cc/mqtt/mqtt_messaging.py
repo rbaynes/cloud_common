@@ -16,7 +16,7 @@ from cloud_common.cc.google import storage
 from cloud_common.cc.google import datastore 
 from cloud_common.cc.google import bigquery 
 from cloud_common.cc.notifications.notification_messaging import NotificationMessaging
-
+from cloud_common.cc.mqtt.deprecated_image_chunking import DeprecatedImageChunking
 
 class MQTTMessaging:
 
@@ -24,8 +24,8 @@ class MQTTMessaging:
     messageType_KEY = 'messageType'
     messageType_EnvVar = 'EnvVar'
     messageType_CommandReply = 'CommandReply'
-    # deprecate processing of 'Image' messages, 
-    # but keep the type for UI backwards compatability
+    # Deprecate processing of chunked 'Image' messages (from old brains), 
+    # but keep the type for UI backwards compatability.
     messageType_Image = 'Image' 
     messageType_ImageUpload = 'ImageUpload'
     messageType_RecipeEvent = 'RecipeEvent'
@@ -65,8 +65,10 @@ class MQTTMessaging:
             return 
 
         if self.messageType_Image == self.get_message_type(message):
-            logging.warning(f'{self.name}.parse: ignoring old chunked images '
-                    'from old clients.')
+            #logging.warning(f'{self.name}.parse: ignoring old chunked images '
+            #        'from old clients.')
+            deprecated = DeprecatedImageChunking()
+            deprecated.save_old_chunked_image(message, device_ID)
             return 
 
         # New way of handling (already) uploaded images.  
@@ -369,7 +371,7 @@ class MQTTMessaging:
                 # Generate the data that will be sent to BigQuery for insertion.
                 # Each value must be a row that matches the table schema.
                 rowsList = []
-                if self.makeBQRowList(pydict, deviceId, rowsList):
+                if self.makeBQRowList(message_obj, deviceId, rowsList):
                     bigquery.data_insert(rowsList)
 
                 delta = datetime.now() - start
