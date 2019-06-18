@@ -66,7 +66,6 @@ class Scheduler:
     #--------------------------------------------------------------------------
     def __init__(self) -> None:
         self.__testing_hours = 0
-        datastore.create_client(env_vars.cloud_project_id)
 
 
     #--------------------------------------------------------------------------

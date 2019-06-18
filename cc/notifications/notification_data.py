@@ -36,7 +36,7 @@ class NotificationData:
 
     #--------------------------------------------------------------------------
     def __init__(self) -> None:
-        datastore.create_client(env_vars.cloud_project_id)
+        pass
 
 
     #--------------------------------------------------------------------------
