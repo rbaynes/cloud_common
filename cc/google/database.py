@@ -2,20 +2,13 @@
 
 from queries import queries
 
-from .bigquery import *
-from .datastore import *
-
+from cloud_common.cc import utils 
+from cloud_common.cc.google import env_vars 
+from cloud_common.cc.google import datastore
+from cloud_common.cc.google import bigquery
 
 # NOTE: The XX_from_BQ() methods are only used if there is no data found
 # in the Datastore.   
-
-
-# ------------------------------------------------------------------------------
-#debugrob: this is in ../utils.py, import that and use it.
-def _bytes_to_string(bs):
-    if isinstance(bs, bytes):
-        bs = bs.decode('utf-8')
-    return bs
 
 
 # ------------------------------------------------------------------------------
@@ -35,8 +28,8 @@ def get_co2_history(device_uuid):
     results = []
     valuesList = device_data[DS_co2_KEY]
     for val in valuesList:
-        ts = _bytes_to_string(val['timestamp'])
-        value = _bytes_to_string(val['value'])
+        ts = utils.bytes_to_string(val['timestamp'])
+        value = utils.bytes_to_string(val['value'])
         results.append({'value': value, 'time': ts})
     return results
 
@@ -59,7 +52,7 @@ def get_led_panel_history(device_uuid):
     results = []
     valuesList = device_data[DS_led_KEY]
     for val in valuesList:
-        led_json = _bytes_to_string(val['value'])
+        led_json = utils.bytes_to_string(val['value'])
         results.append(led_json)
     return results
 
@@ -91,16 +84,16 @@ def get_temp_and_humidity_history(device_uuid):
     if DS_temp_KEY in device_data:
         valuesList = device_data[DS_temp_KEY]
         for val in valuesList:
-            ts = _bytes_to_string(val['timestamp'])
-            value = _bytes_to_string(val['value'])
+            ts = utils.bytes_to_string(val['timestamp'])
+            value = utils.bytes_to_string(val['value'])
             result_json["temp"].append({'value': value, 'time': ts})
 
     # Get RH values
     if DS_rh_KEY in device_data:
         valuesList = device_data[DS_rh_KEY]
         for val in valuesList:
-            ts = _bytes_to_string(val['timestamp'])
-            value = _bytes_to_string(val['value'])
+            ts = utils.bytes_to_string(val['timestamp'])
+            value = utils.bytes_to_string(val['value'])
             result_json["RH"].append({'value': value, 'time': ts})
 
     return result_json

@@ -1,5 +1,6 @@
 import os
 
+
 # Environment variables, set locally for testing and when deployed to gcloud.
 path_to_google_service_account = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
 path_to_firebase_service_account = os.getenv('FIREBASE_SERVICE_ACCOUNT')
@@ -15,6 +16,7 @@ dev_events = os.getenv('GCLOUD_DEV_EVENTS')
 bq_dataset = os.getenv('BQ_DATASET')
 bq_table = os.getenv('BQ_TABLE')
 cs_bucket = os.getenv('CS_BUCKET')
+cs_upload_bucket = os.getenv('CS_UPLOAD_BUCKET')
 
 
 

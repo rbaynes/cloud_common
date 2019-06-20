@@ -4,7 +4,7 @@ import datetime as dt
 from google.oauth2 import service_account
 from googleapiclient import discovery, errors
 
-from .env_vars import *
+from cloud_common.cc.google import env_vars
 
 
 # ------------------------------------------------------------------------------
@@ -31,7 +31,7 @@ def get_IoT_client(path_to_service_account_json):
 
 
 # Get an IoT client using the GCP project (NOT firebase proj!)
-iot_client = get_IoT_client(path_to_google_service_account)
+iot_client = get_IoT_client(env_vars.path_to_google_service_account)
 
 
 #------------------------------------------------------------------------------
@@ -40,7 +40,7 @@ def get_iot_registrations():
 
     # path to the device registry
     registry_name = 'projects/{}/locations/{}/registries/{}'.format(
-        cloud_project_id, cloud_region, device_registry)
+        env_vars.cloud_project_id, env_vars.cloud_region, env_vars.device_registry)
 
     try:
         # get devices registry and list
@@ -64,7 +64,7 @@ def get_iot_device_list():
 
     # path to the device registry
     registry_name = 'projects/{}/locations/{}/registries/{}'.format(
-        cloud_project_id, cloud_region, device_registry)
+        env_vars.cloud_project_id, env_vars.cloud_region, env_vars.device_registry)
 
     try:
         # get devices registry and list
@@ -114,7 +114,7 @@ def delete_iot_device(device_id):
 
     # path to the device registry & device
     registry_name = 'projects/{}/locations/{}/registries/{}'.format(
-        cloud_project_id, cloud_region, device_registry)
+        env_vars.cloud_project_id, env_vars.cloud_region, env_vars.device_registry)
     device_name = '{}/devices/{}'.format(registry_name, device_id)
 
     try:
